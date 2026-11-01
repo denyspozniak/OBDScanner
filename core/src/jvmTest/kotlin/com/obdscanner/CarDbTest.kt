@@ -123,6 +123,8 @@ class CarDbTest {
         assertEquals("Pontiac", CarDb.brandOf("5Y2SP678X9Z410428")?.name)
         assertEquals("E140", CarDb.detect("5Y2SP678X9Z410428")?.gen)
         assertEquals("E130", CarDb.detect("5Y2SL62875Z000000")?.gen)
+        // Lada Vesta: the developer's phone on a 2022 Vesta (2026-10-31), XTAGFK by its VIN — it came out «model unknown».
+        assertEquals("Vesta", CarDb.detect("XTAGFK330NY614599")?.model)
         // Subaru Outback BT (NHTSA vPIC): the 6th character G — the 2.4 turbo, whose engine reads codes as "uds2" and
         // keeps the family's parameters; A — the 2.5, the family's default dialect.
         val xt = CarDb.detect("4S4BTGND8M3164262")

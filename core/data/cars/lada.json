@@ -117,7 +117,10 @@
       "src": [
         "https://en.wikipedia.org/wiki/Lada_Vesta"
       ],
-      "verified": true
+      "verified": true,
+      "vin": [
+        "^XTAGFK"
+      ]
     },
     {
       "brand": "Lada",

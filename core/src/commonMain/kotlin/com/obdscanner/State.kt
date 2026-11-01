@@ -111,8 +111,10 @@ data class VehicleInfo(
     val makeByPick: Boolean = false,
     /** The app-wide hand pick, not applied — another car: its protocol isn't the one the car answered on, or the VIN is another make's. */
     val misfitPick: CarChoice? = null,
-    /** The make by the VIN when that is why [misfitPick] doesn't fit; null — the protocol is. */
+    /** The make by the VIN when that is why [misfitPick] doesn't fit; null — the protocol is, or [misfitEcu]. */
     val misfitMake: String? = null,
+    /** [misfitPick] doesn't fit because the engine ECU refuses the model's own requests (no VIN, the same protocol). */
+    val misfitEcu: Boolean = false,
     /** The hand pick is the one made on this car (kept by its VIN or calibration), not the app-wide one. */
     val pickForCar: Boolean = false,
     val memory: CarMemory = CarMemory(),

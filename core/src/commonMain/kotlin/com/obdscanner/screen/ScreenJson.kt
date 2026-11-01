@@ -47,7 +47,7 @@ object ScreenJson {
     private fun pairs(a: Arr, list: List<Pair<String, String>>) = list.forEach { (k, v) -> a.obj { str("k", k); str("v", v) } }
 
     fun carCard(c: CarCardView): String = obj {
-        str("label", c.label); str("title", c.title); str("status", c.status); str("pick", c.pick)
+        str("label", c.label); str("title", c.title); str("status", c.status); str("pick", c.pick); str("auto", c.auto)
         c.reads?.let { (k, v) -> obj("reads") { str("k", k); str("v", v) } }
         arr("details") { pairs(this, c.details) }
         c.features?.let { (t, items) -> obj("features") { str("title", t); arr("items") { items.forEach { str(it) } } } }

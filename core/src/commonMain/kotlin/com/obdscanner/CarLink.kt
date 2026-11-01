@@ -290,7 +290,7 @@ class CarLink(
             val car = pick?.model?.takeIf { otherMake == null }?.let { CarDb.forVin(it, v.vin) } ?: CarDb.detect(v.vin)
             val misfit = otherMake?.takeIf { connected }
             // By id: forVin() narrows the model's engines, so the car is a copy of the picked model, not equal to it.
-            v.copy(car = car, misfitPick = misfit, misfitMake = misfit?.let { vinBrand?.name },
+            v.copy(car = car, misfitPick = misfit, misfitMake = misfit?.let { vinBrand?.name }, misfitEcu = false,
                 pickForCar = forCar != null && car != null && car.id == pick?.model?.id)
         }
         syncDtcFamily()
@@ -739,9 +739,13 @@ class CarLink(
         // answered on K-line) or another make than the VIN's (CTS picked, a Kia's VIN).
         val otherProtocol = global?.model?.takeIf { own == null && it.protocol != null && it.protocol != o.protocol }
         val otherMake = global?.takeIf { own == null && otherProtocol == null && brand != null && it.family != brand.family }
-        val misfit = if (otherProtocol != null) global else otherMake
+        // No VIN to tell, the same protocol: the engine ECU refusing the very service of the model's own requests is
+        // another car (the CTS picked, a Solaris answered NRC 11 to all its GM requests on 2026-11-01).
+        val otherEcu = global?.takeIf { own == null && otherProtocol == null && brand == null && it.model != null && ecmRefuses(o, it.model) }
+        val misfit = if (otherProtocol != null) global else otherMake ?: otherEcu
         if (otherProtocol != null) session?.note("hand pick ${otherProtocol.id} doesn't fit: its protocol ${otherProtocol.protocol}, the car's ${o.protocol}")
         if (otherMake != null) session?.note("hand pick ${otherMake.id} doesn't fit: the VIN is ${brand?.name}'s")
+        if (otherEcu != null) session?.note("hand pick ${otherEcu.model?.id} doesn't fit: the engine ECU refuses its requests' service (NRC 11)")
         val picked = own ?: global.takeIf { misfit == null }
         // A hand-picked car stays while the VIN agrees with its family (or there is no VIN); otherwise the VIN wins.
         val known = picked?.model?.takeIf { brand == null || it.family == brand.family }?.let { CarDb.forVin(it, vin) } ?: CarDb.detect(vin)
@@ -756,7 +760,8 @@ class CarLink(
             val ecus = v.ecus.toMutableMap()
             for ((h, i) in info) ecus[h] = (ecus[h] ?: EcuInfo(h)).copy(info09 = i)
             v.copy(vin = vin, make = make, ecus = ecus, car = car, brand = brand?.name, makeByPick = byPick,
-                misfitPick = misfit, misfitMake = otherMake?.let { brand?.name }, pickForCar = own?.model != null && car?.id == own.model.id)
+                misfitPick = misfit, misfitMake = otherMake?.let { brand?.name }, misfitEcu = otherEcu != null,
+                pickForCar = own?.model != null && car?.id == own.model.id)
         }
         syncDtcFamily()
         refreshMemory()
@@ -768,7 +773,8 @@ class CarLink(
             tr("Выбрано вручную: ", "Picked by hand: ") + (global?.let(::title) ?: tr("нет", "nothing")) +
                 (otherProtocol?.let { tr(" — не подходит: у неё ${CarText.protocolName(it.protocol)}, машина ответила по ${CarText.protocolName(o.protocol)}",
                     " — doesn't fit: it is on ${CarText.protocolName(it.protocol)}, the car answered on ${CarText.protocolName(o.protocol)}") }
-                    ?: otherMake?.let { tr(" — не подходит: по VIN это ${brand?.name}", " — doesn't fit: the VIN says ${brand?.name}") } ?: ""),
+                    ?: otherMake?.let { tr(" — не подходит: по VIN это ${brand?.name}", " — doesn't fit: the VIN says ${brand?.name}") }
+                    ?: otherEcu?.let { tr(" — не подходит: блок двигателя не принимает её запросы", " — doesn't fit: the engine ECU refuses its requests") } ?: ""),
             own?.let { tr("Выбрано для этой машины: ", "Picked for this car: ") + title(it) },
             tr("Модель: ", "Model: ") + (car?.title?.let {
                 it + when {
@@ -1519,6 +1525,26 @@ class CarLink(
      * A model whose rules the engine ECU's answers fit ([CarModel.match]): for a car without a VIN (JDM)
      * or with one that doesn't say the model. Each request is sent once, whatever number of rules use it.
      */
+    /**
+     * The engine ECU answers the first [PICK_CHECK] of [model]'s own requests to it with NRC 11, «service not
+     * supported» — every one of them. Silence or another refusal (an unknown DID: another engine of the model) proves
+     * nothing.
+     */
+    private suspend fun ecmRefuses(o: Obd, model: CarModel): Boolean {
+        if (o.kline || o.can29) return false
+        val asks = CarDb.family(model.family)?.probeOrder(model, null).orEmpty().filter { it.req == 0x7E0 && it.source == "db" }.take(PICK_CHECK)
+        if (asks.isEmpty()) return false
+        val sc = GmScanner(o) { session?.note(it) }
+        try {
+            return asks.all { c ->
+                o.target(c.req, c.resp)
+                sc.read(GmModule(c.req, c.resp, "", ""), c.service, c.did)?.let { it.first == null && it.second == 0x11 } == true
+            }
+        } finally {
+            o.broadcast()
+        }
+    }
+
     private suspend fun recogniseModel(o: Obd, brand: String?, info: Map<Int, Map<Int, String>>): Pair<CarModel?, MatchRule?> {
         // The rules ask 11-bit ids.
         if (o.kline || o.can29) return null to null
@@ -2572,6 +2598,8 @@ class CarLink(
         private const val SILENT_SKIP = 3
         /** At most this many manufacturer requests are probed on connect. */
         private const val MAX_PROBE = 200
+        /** A hand pick without a VIN is checked by this many of its engine ECU requests. */
+        private const val PICK_CHECK = 2
         /** Shown on the Main / Fuel screen: read at least every [PollRate.MEDIUM] while it's open. */
         val MAIN_PIDS = listOf(0x0C, 0x0D, 0x05, 0x0F, 0x04, 0x11, 0x42, 0x10, 0x0B, 0x0E, 0x2F, 0x5C, 0x46, 0x33, 0x1F, 0x43, 0x45, 0x49, 0x03, 0x06, 0x07, 0x08, 0x09)
         val FUEL_PIDS = listOf(0x03, 0x04, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10) +

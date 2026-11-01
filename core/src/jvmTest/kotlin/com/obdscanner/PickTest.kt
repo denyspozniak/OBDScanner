@@ -2,6 +2,7 @@ package com.obdscanner
 
 import com.obdscanner.car.CarDb
 import com.obdscanner.screen.CarCard
+import com.obdscanner.screen.CarCardView
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -28,6 +29,15 @@ class PickTest {
         "ATSH7DF" to "OK", "0100" to "7E9 06 41 00 80 00 00 01 AA | 7E8 06 41 00 BE 3E A8 13 AA",
         "0900" to "7E9 06 49 00 14 40 00 00 AA | 7E8 06 49 00 55 00 00 00 AA",
         "0902" to "7E8 10 14 49 02 01 58 57 45 | 7E8 21 50 48 38 31 41 44 48 | 7E8 22 30 30 31 32 35 39 36",
+    )
+
+    /** Hyundai Solaris of 2026-11-01: CAN 11/500 like the CTS, no VIN (spaces), the engine refuses \$22 at all. */
+    private val solaris = log(
+        "ATZ" to "ELM327 v1.5", "ATSP6" to "OK", "0100" to "7E9 06 41 00 98 18 80 13 | 7E8 06 41 00 BE 3E B8 1B", "ATDPN" to "6",
+        "0900" to "7E9 06 49 00 14 40 00 00 | 7E8 06 49 00 54 40 00 00",
+        "0902" to "7E8 10 14 49 02 01 20 20 20 | 7E8 21 20 20 20 20 20 20 20 | 7E8 22 20 20 20 20 20 20 20",
+        "0904" to "7E8 10 13 49 04 01 47 52 42 | 7E8 21 52 42 34 34 43 51 53 | 7E8 22 32 2D 41 30 30 30 00",
+        "ATSH7E0" to "OK", "221154" to "7E8 03 7F 22 11", "221470" to "7E8 03 7F 22 11",
     )
 
     private val cts get() = CarDb.models.single { it.brand == "Cadillac" && it.model == "CTS" && it.gen == "2nd gen" }
@@ -88,6 +98,28 @@ class PickTest {
         assertTrue(card.status.contains("VIN") && card.status.contains("Kia"), card.status)
         val car = r.reports.single { it.first == tr("Машина", "Car") }.second
         assertTrue(car.contains(tr("не подходит: по VIN это Kia", "doesn't fit: the VIN says Kia")), car)
+    }
+
+    /** CTS picked, a Solaris answered on the same CAN 11/500 with no VIN: its engine refuses \$22 — not the CTS, not GM. */
+    @Test
+    fun aPickTheEngineRefusesDoesNotFit() {
+        CarDbTest.load()
+        val r = replay(solaris, MapStore(), 0, pick = CarDb.choice(cts.id))
+        val v = r.link.vehicle.value
+        assertNull(v.car)
+        assertEquals(cts, v.misfitPick?.model)
+        assertTrue(v.misfitEcu)
+        assertFalse(v.makeByPick)
+        val card = CarCard.build(v, CarDb.choice(cts.id))
+        assertEquals(tr("не определена", "unknown"), card.title)
+        assertTrue(card.status.contains(tr("блок двигателя не принимает", "the engine ECU refuses")), card.status)
+        val car = r.reports.single { it.first == tr("Машина", "Car") }.second
+        assertTrue(car.contains(tr("Модель: не определена", "Model: unknown")), car)
+        // «Автовыбор» on the card drops the pick; with nothing picked there is no button.
+        assertEquals(CarCardView.AUTO, card.auto)
+        r.link.pickCar(null, connected = true)
+        assertNull(r.link.vehicle.value.misfitPick)
+        assertNull(CarCard.build(r.link.vehicle.value, null).auto)
     }
 
     /** The CTS picked while connected to the Kia: not applied, and the Kia doesn't bring it back next time. */

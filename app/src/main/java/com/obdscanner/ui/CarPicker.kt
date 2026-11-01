@@ -77,7 +77,10 @@ fun CarCard(m: ObdManager, v: VehicleInfo, picked: CarChoice?, details: Boolean 
                     Text(c.title, style = MaterialTheme.typography.titleMedium)
                     Text(c.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
-                OutlinedButton(onClick = { dialog = true }) { Text(c.pick) }
+                Column(horizontalAlignment = Alignment.End) {
+                    OutlinedButton(onClick = { dialog = true }) { Text(c.pick) }
+                    c.auto?.let { TextButton(onClick = { m.pickCar(null) }) { Text(it) } }
+                }
             }
             // Collapsed by default: on "Connect" the adapters are below it.
             var more by rememberSaveable { mutableStateOf(false) }
@@ -104,7 +107,7 @@ private fun Line(k: String, v: String) {
     Text(v, style = MaterialTheme.typography.bodyMedium)
 }
 
-/** Make → "make only" or a model/generation ([CarPicker] in the core). "By VIN" clears the hand pick. */
+/** Make → "make only" or a model/generation ([CarPicker] in the core). "Auto" clears the hand pick. */
 @Composable
 fun CarPickerDialog(current: CarChoice?, compare: MutableList<String>, onPick: (CarChoice?) -> Unit, onDismiss: () -> Unit) {
     var brand by remember { mutableStateOf<String?>(null) }

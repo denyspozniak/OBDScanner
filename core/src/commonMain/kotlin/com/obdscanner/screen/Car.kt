@@ -73,13 +73,15 @@ object CarText {
 /**
  * The car the app works with: found by the VIN or picked by hand — a model, or only a make (then its
  * family's parameters are probed and the VIN finds the model when it can). [reads] — what is read beyond
- * OBD; [details] and [features] — under "More".
+ * OBD; [details] and [features] — under "More". [auto] — the button that drops the hand pick (on someone else's car
+ * with the own car still picked), null while nothing is picked.
  */
 class CarCardView(
     val label: String,
     val title: String,
     val status: String,
     val pick: String,
+    val auto: String?,
     val reads: Pair<String, String>?,
     val details: List<Pair<String, String>>,
     val features: Pair<String, List<String>>?,
@@ -88,6 +90,8 @@ class CarCardView(
     companion object {
         val MORE = tr("Подробнее ▾", "More ▾")
         val LESS = tr("Свернуть ▴", "Less ▴")
+        /** No hand pick: the car by its VIN and its blocks' answers — the card's button and the picker's first row. */
+        val AUTO = tr("Автовыбор", "Auto")
     }
 }
 
@@ -105,6 +109,8 @@ object CarCard {
                 val name = m.model?.title ?: m.brand
                 if (v.misfitMake != null) tr("Выбрана вручную $name, но по VIN это ${v.misfitMake} — выбор не применён",
                     "$name is picked by hand, but the VIN says ${v.misfitMake} — the pick isn't applied")
+                else if (v.misfitEcu) tr("Выбрана вручную $name, но блок двигателя не принимает её запросы — это другая машина, выбор не применён",
+                    "$name is picked by hand, but the engine ECU refuses its requests — another car, the pick isn't applied")
                 else tr("Выбрана вручную $name, но она не подходит: у неё ${CarText.protocolName(m.model?.protocol)}, а эта машина ответила по ${v.protocol.substringBeforeLast(" (")}",
                     "$name is picked by hand, but it doesn't fit: it is on ${CarText.protocolName(m.model?.protocol)}, this car answered on ${v.protocol.substringBeforeLast(" (")}")
             }
@@ -149,6 +155,7 @@ object CarCard {
             title = car?.title ?: brand ?: if (v.misfitPick != null) tr("не определена", "unknown") else tr("не выбрана", "not picked"),
             status = status,
             pick = tr("Выбрать", "Pick"),
+            auto = CarCardView.AUTO.takeIf { hand != null },
             reads = reads,
             details = details,
             features = features,
@@ -158,7 +165,7 @@ object CarCard {
 }
 
 /**
- * The picker: makes, then "make only" or a model / generation; "Find by VIN" clears the hand pick. [Row.pick] —
+ * The picker: makes, then "make only" or a model / generation; "Auto" clears the hand pick. [Row.pick] —
  * the choice a tap makes ("" — by VIN), else [Row.open] — the make whose list a tap opens; [Row.compare] —
  * the id ticked for the comparison.
  */
@@ -190,7 +197,8 @@ object CarPicker {
         val q = filter.trim()
         val out = mutableListOf<Row>()
         if (brand == null && q.isEmpty()) {
-            out += Row(tr("Определять по VIN", "Find by VIN"), tr("без ручного выбора", "no hand pick"), current == null, pick = "")
+            out += Row(CarCardView.AUTO, tr("по VIN и ответам блоков, без ручного выбора — для чужой машины",
+                "by the VIN and the blocks' answers, no hand pick — for someone else's car"), current == null, pick = "")
             val counts = models.groupingBy { it.brand }.eachCount()
             for (b in brandNames) out += Row(b, modelsText(counts[b] ?: 0) + familyTag(b), current?.brand == b, open = b, compare = BRAND + b)
             return Rows(out, false)
